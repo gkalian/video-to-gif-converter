@@ -46,7 +46,7 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $stageDir = "release-stage"
           New-Item -ItemType Directory -Path $stageDir -Force
-          Copy-Item "src-tauri/target/release/Free Video to GIF Converter.exe" "$stageDir/Free Video to GIF Converter_${tag}.exe"
+          Copy-Item "src-tauri/target/release/video-to-gif.exe" "$stageDir/Free Video to GIF Converter_${tag}.exe"
           Copy-Item "src-tauri/INSTRUCTIONS.txt" "$stageDir/INSTRUCTIONS.txt"
           Compress-Archive -Path "$stageDir/*" -DestinationPath "Free-Video-to-GIF-Converter-${tag}.zip"
 
