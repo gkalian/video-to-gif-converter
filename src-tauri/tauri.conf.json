@@ -1,0 +1,40 @@
+{
+  "productName": "Free Video to GIF Converter",
+  "version": "0.0.0",
+  "identifier": "com.gkalian.video-to-gif",
+  "build": {
+    "frontendDist": "../src",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Video to GIF",
+        "width": 900,
+        "height": 680,
+        "minWidth": 720,
+        "minHeight": 520,
+        "resizable": true,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost data:; style-src 'self' 'unsafe-inline'",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$TEMP/**/*", "**/*"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "targets": []
+  },
+  "plugins": {}
+}

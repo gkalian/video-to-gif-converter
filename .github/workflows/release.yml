@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set version from tag
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $conf.version = $version
+          $conf | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json
+          (Get-Content src-tauri/Cargo.toml) -replace 'version = "0\.0\.0"', "version = `"$version`"" | Set-Content src-tauri/Cargo.toml
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2"
+
+      - name: Build Tauri app
+        working-directory: src-tauri
+        run: cargo tauri build --no-bundle
+
+      - name: Create ZIP archive
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $stageDir = "release-stage"
+          New-Item -ItemType Directory -Path $stageDir -Force
+          Copy-Item "src-tauri/target/release/Free Video to GIF Converter.exe" "$stageDir/Free Video to GIF Converter_${tag}.exe"
+          Copy-Item "src-tauri/INSTRUCTIONS.txt" "$stageDir/INSTRUCTIONS.txt"
+          Compress-Archive -Path "$stageDir/*" -DestinationPath "Free-Video-to-GIF-Converter-${tag}.zip"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.zip"
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

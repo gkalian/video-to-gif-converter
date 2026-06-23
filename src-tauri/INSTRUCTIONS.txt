@@ -1,0 +1,10 @@
+Free Video to GIF Converter
+============================
+
+Quick Start:
+1. Download FFmpeg from https://www.gyan.dev/ffmpeg/builds/ (any recent build)
+2. Place ffmpeg.exe in the same folder as this application's .exe file
+3. Run the application
+
+That's it! No installer or additional setup required.
+Windows 10+ (WebView2 is preinstalled).
