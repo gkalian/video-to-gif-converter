@@ -78,9 +78,16 @@
             <input type="number" id="outputHeight" class="input" value="240" min="16" max="1080" step="2">
           </div>
           <div class="setting">
-            <label class="setting__label">Frame Rate (fps)</label>
-            <input type="range" id="fpsSlider" class="range" min="1" max="30" value="10">
-            <span class="setting__value" id="fpsValue">10</span>
+            <label class="setting__label">FPS / Framerate</label>
+            <select id="fpsSelect" class="select">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+              <option value="24">24</option>
+              <option value="25">25</option>
+              <option value="30">30</option>
+            </select>
           </div>
           <div class="setting setting--checkbox">
             <label class="setting__label">
@@ -125,9 +132,23 @@
       <div class="step2-settings" id="step2-settings">
         <div class="settings-grid">
           <div class="setting">
-            <label class="setting__label">Speed (fps)</label>
-            <input type="range" id="gifFps" class="range" min="1" max="30" value="10">
-            <span class="setting__value" id="gifFpsValue">10</span>
+            <label class="setting__label">Playspeed</label>
+            <select id="gifPlayspeed" class="select">
+              <option value="source" selected>Same as source video</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="setting hidden" id="customFpsSetting">
+            <label class="setting__label">Custom FPS</label>
+            <select id="gifFpsCustom" class="select">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+              <option value="24">24</option>
+              <option value="25">25</option>
+              <option value="30">30</option>
+            </select>
           </div>
           <div class="setting">
             <label class="setting__label">Quality</label>
@@ -136,12 +157,6 @@
               <option value="medium" selected>Medium</option>
               <option value="high">High (best colors)</option>
             </select>
-          </div>
-          <div class="setting setting--checkbox">
-            <label class="setting__label">
-              <input type="checkbox" id="gifLoop" checked>
-              Loop animation
-            </label>
           </div>
           <div class="setting setting--checkbox">
             <label class="setting__label">

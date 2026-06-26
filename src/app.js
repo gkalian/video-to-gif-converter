@@ -63,9 +63,6 @@ function setupStep1() {
   $('btnExtract').addEventListener('click', extractFrames);
   $('btnCancelExtract').addEventListener('click', cancelExtraction);
 
-  $('fpsSlider').addEventListener('input', () => {
-    $('fpsValue').textContent = $('fpsSlider').value;
-  });
 
   $('outputWidth').addEventListener('change', () => {
     if ($('keepAspect').checked && state.videoInfo) {
@@ -139,7 +136,7 @@ async function extractFrames() {
 
   const startTime = parseFloat($('startTime').value);
   const endTime = parseFloat($('endTime').value);
-  const fps = parseInt($('fpsSlider').value);
+  const fps = parseInt($('fpsSelect').value);
   const width = parseInt($('outputWidth').value);
   const height = parseInt($('outputHeight').value);
 
@@ -191,8 +188,9 @@ function setupStep2() {
   $('btnNewConversion').addEventListener('click', resetApp);
   $('btnOpenGif').addEventListener('click', openGif);
 
-  $('gifFps').addEventListener('input', () => {
-    $('gifFpsValue').textContent = $('gifFps').value;
+  $('gifPlayspeed').addEventListener('change', () => {
+    const isCustom = $('gifPlayspeed').value === 'custom';
+    $('customFpsSetting').classList.toggle('hidden', !isCustom);
   });
 
   const frameSelector = $('frameSelector');
@@ -318,9 +316,14 @@ async function makeGif() {
   });
   if (!outputPath) return;
 
-  const fps = parseInt($('gifFps').value);
+  let fps;
+  if ($('gifPlayspeed').value === 'source') {
+    fps = parseInt($('fpsSelect').value);
+  } else {
+    fps = parseInt($('gifFpsCustom').value);
+  }
   const quality = $('gifQuality').value;
-  const looping = $('gifLoop').checked;
+  const looping = true;
   const fastMode = $('gifFastMode').checked;
 
   $('gifProgress').classList.remove('hidden');
