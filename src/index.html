@@ -121,12 +121,39 @@
       </div>
 
       <div class="frame-viewer" id="frameViewer">
-        <div class="frame-viewer__preview">
+        <div class="frame-viewer__preview" id="framePreview">
           <img id="framePreviewImg" src="" alt="Frame preview">
+          <div class="crop-overlay hidden" id="cropOverlay">
+            <div class="crop-shade"><div class="crop-hole" id="cropHole"></div></div>
+            <div class="crop-box" id="cropBox" data-handle="move">
+              <span class="crop-handle crop-handle--nw" data-handle="nw"></span>
+              <span class="crop-handle crop-handle--n" data-handle="n"></span>
+              <span class="crop-handle crop-handle--ne" data-handle="ne"></span>
+              <span class="crop-handle crop-handle--e" data-handle="e"></span>
+              <span class="crop-handle crop-handle--se" data-handle="se"></span>
+              <span class="crop-handle crop-handle--s" data-handle="s"></span>
+              <span class="crop-handle crop-handle--sw" data-handle="sw"></span>
+              <span class="crop-handle crop-handle--w" data-handle="w"></span>
+            </div>
+          </div>
         </div>
         <div class="frame-viewer__sidebar">
           <select id="frameSelector" class="select frame-selector" size="12"></select>
         </div>
+      </div>
+
+      <div class="crop-bar" id="cropBar">
+        <label class="crop-bar__toggle">
+          <input type="checkbox" id="cropEnabled">
+          Crop
+        </label>
+        <label class="crop-field">X <input type="number" id="cropX" class="input input--small" min="0" step="1" disabled></label>
+        <label class="crop-field">Y <input type="number" id="cropY" class="input input--small" min="0" step="1" disabled></label>
+        <label class="crop-field">W <input type="number" id="cropW" class="input input--small" min="1" step="1" disabled></label>
+        <label class="crop-field">H <input type="number" id="cropH" class="input input--small" min="1" step="1" disabled></label>
+        <button class="btn btn--ghost btn--small" id="btnCropAuto">Auto-detect black bars</button>
+        <button class="btn btn--ghost btn--small" id="btnCropReset" disabled>Reset</button>
+        <span class="crop-bar__info" id="cropInfo"></span>
       </div>
 
       <div class="step2-settings" id="step2-settings">

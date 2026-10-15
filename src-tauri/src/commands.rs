@@ -81,7 +81,16 @@ pub struct GifOptions {
     quality: String,
     looping: bool,
     fast_mode: bool,
+    crop: Option<CropRect>,
     output_path: String,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+pub struct CropRect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
 }
 
 #[tauri::command]
@@ -324,7 +333,29 @@ pub async fn make_gif(app: AppHandle, options: GifOptions) -> Result<(), String>
         return Err("No frames".to_string());
     }
 
-    let (width, height, _) = read_png_rgba(&frames[0])?;
+    let (src_width, src_height, _) = read_png_rgba(&frames[0])?;
+
+    if let Some(c) = options.crop {
+        if c.width == 0 || c.height == 0
+            || c.x + c.width > src_width || c.y + c.height > src_height
+        {
+            return Err(format!(
+                "Crop area {}x{}+{}+{} is outside the {}x{} frame",
+                c.width, c.height, c.x, c.y, src_width, src_height
+            ));
+        }
+    }
+    let (width, height) = match options.crop {
+        Some(c) => (c.width, c.height),
+        None => (src_width, src_height),
+    };
+    let load_frame = |path: &str| -> Result<Vec<u8>, String> {
+        let (w, _, rgba) = read_png_rgba(path)?;
+        Ok(match options.crop {
+            Some(c) => crop_rgba(&rgba, w, c),
+            None => rgba,
+        })
+    };
 
     let output_file = fs::File::create(&options.output_path).map_err(|e| e.to_string())?;
     let mut encoder = gif::Encoder::new(output_file, width as u16, height as u16, &[])
@@ -350,7 +381,7 @@ pub async fn make_gif(app: AppHandle, options: GifOptions) -> Result<(), String>
             if *GIF_CANCEL_FLAG.lock().unwrap() {
                 return Err("GIF creation cancelled".to_string());
             }
-            let (_, _, rgba) = read_png_rgba(frame_path)?;
+            let rgba = load_frame(frame_path)?;
             all_pixels.extend_from_slice(&rgba);
             frame_data.push(rgba);
             let percent = (((i + 1) as f64 / total as f64) * 20.0) as u32;
@@ -393,9 +424,9 @@ pub async fn make_gif(app: AppHandle, options: GifOptions) -> Result<(), String>
                 return Err("GIF creation cancelled".to_string());
             }
 
-            let (_, _, rgba) = read_png_rgba(frame_path)?;
+            let rgba = load_frame(frame_path)?;
 
-            let nq = color_quant::NeuQuant::new(sample_factor, 256, &rgba);
+            let nq =color_quant::NeuQuant::new(sample_factor, 256, &rgba);
             let mut indexed_pixels: Vec<u8> = Vec::with_capacity((width * height) as usize);
             for pixel in rgba.chunks(4) {
                 indexed_pixels.push(nq.index_of(pixel) as u8);
@@ -418,6 +449,17 @@ pub async fn make_gif(app: AppHandle, options: GifOptions) -> Result<(), String>
     }
 
     Ok(())
+}
+
+fn crop_rgba(rgba: &[u8], src_width: u32, c: CropRect) -> Vec<u8> {
+    let stride = src_width as usize * 4;
+    let row_len = c.width as usize * 4;
+    let mut out = Vec::with_capacity(row_len * c.height as usize);
+    for row in c.y..c.y + c.height {
+        let start = row as usize * stride + c.x as usize * 4;
+        out.extend_from_slice(&rgba[start..start + row_len]);
+    }
+    out
 }
 
 fn read_png_rgba(path: &str) -> Result<(u32, u32, Vec<u8>), String> {
@@ -508,5 +550,19 @@ fn kill_process(pid: u32) {
             .args(["-9", &pid.to_string()])
             .output()
             .ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crop_rgba_takes_inner_rows_and_columns() {
+        // 4x3 frame, each pixel's R channel = its index
+        let rgba: Vec<u8> = (0..12u8).flat_map(|i| [i, 0, 0, 255]).collect();
+        let out = crop_rgba(&rgba, 4, CropRect { x: 1, y: 1, width: 2, height: 2 });
+        let reds: Vec<u8> = out.chunks(4).map(|p| p[0]).collect();
+        assert_eq!(reds, vec![5, 6, 9, 10]);
     }
 }

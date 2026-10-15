@@ -9,7 +9,12 @@ const state = {
   framePaths: [],
   selectedFrames: new Set(),
   lastGifPath: null,
+  // Crop rect in frame pixels; frameSize is the size of extracted frames
+  frameSize: null,
+  crop: { enabled: false, x: 0, y: 0, w: 0, h: 0 },
 };
+
+const CROP_MIN = 8;
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,6 +25,7 @@ let gifProgressUnlisten = null;
 async function init() {
   setupStep1();
   setupStep2();
+  setupCrop();
   setupDragDrop();
 
   try {
@@ -160,6 +166,7 @@ async function extractFrames() {
 
     state.framePaths = frames;
     state.selectedFrames.clear();
+    resetCropState();
     if (extractProgressUnlisten) { extractProgressUnlisten(); extractProgressUnlisten = null; }
     loadFrameList();
     goToStep(2);
@@ -325,6 +332,7 @@ async function makeGif() {
   const quality = $('gifQuality').value;
   const looping = true;
   const fastMode = $('gifFastMode').checked;
+  const crop = getCropOption();
 
   $('gifProgress').classList.remove('hidden');
   $('gifSuccess').classList.add('hidden');
@@ -349,7 +357,7 @@ async function makeGif() {
 
   try {
     await invoke('make_gif', {
-      options: { frames: state.framePaths, fps, quality, looping, fast_mode: fastMode, output_path: outputPath }
+      options: { frames: state.framePaths, fps, quality, looping, fast_mode: fastMode, crop, output_path: outputPath }
     });
     state.lastGifPath = outputPath;
     if (gifProgressUnlisten) { gifProgressUnlisten(); gifProgressUnlisten = null; }
@@ -407,6 +415,7 @@ function resetApp() {
   state.framePaths = [];
   state.selectedFrames.clear();
   state.lastGifPath = null;
+  resetCropState();
   invoke('cleanup_temp');
   $('dropZone').classList.remove('hidden');
   $('videoInfo').classList.add('hidden');
@@ -422,6 +431,266 @@ function resetApp() {
   $('gifProgressBar').style.width = '0%';
   $('frameSelector').innerHTML = '';
   goToStep(1);
+}
+
+// --- Crop ---
+
+let cropDrag = null;
+
+function setupCrop() {
+  const img = $('framePreviewImg');
+  const overlay = $('cropOverlay');
+
+  img.addEventListener('load', () => {
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (!state.frameSize || state.frameSize.w !== w || state.frameSize.h !== h) {
+      state.frameSize = { w, h };
+      setCropRect(0, 0, w, h);
+    }
+    layoutCropOverlay();
+  });
+  new ResizeObserver(layoutCropOverlay).observe($('framePreview'));
+
+  $('cropEnabled').addEventListener('change', () => {
+    state.crop.enabled = $('cropEnabled').checked;
+    updateCropUI();
+  });
+
+  for (const id of ['cropX', 'cropY', 'cropW', 'cropH']) {
+    $(id).addEventListener('change', () => {
+      setCropRect(
+        parseInt($('cropX').value) || 0,
+        parseInt($('cropY').value) || 0,
+        parseInt($('cropW').value) || 0,
+        parseInt($('cropH').value) || 0,
+      );
+    });
+  }
+
+  $('btnCropReset').addEventListener('click', () => {
+    if (state.frameSize) setCropRect(0, 0, state.frameSize.w, state.frameSize.h);
+  });
+  $('btnCropAuto').addEventListener('click', autoDetectBlackBars);
+
+  overlay.addEventListener('pointerdown', (e) => {
+    if (!state.frameSize || e.button !== 0) return;
+    e.preventDefault();
+    const p = pointerToFrame(e);
+    const handle = e.target.dataset.handle || 'new';
+    const { x, y, w, h } = state.crop;
+    cropDrag = { handle, startX: p.x, startY: p.y, rect: { x, y, w, h } };
+    overlay.setPointerCapture(e.pointerId);
+  });
+
+  overlay.addEventListener('pointermove', (e) => {
+    if (!cropDrag) return;
+    const p = pointerToFrame(e);
+    const { w: W, h: H } = state.frameSize;
+    const { handle, startX, startY, rect: r } = cropDrag;
+    const dx = p.x - startX;
+    const dy = p.y - startY;
+
+    if (handle === 'move') {
+      setCropRect(clamp(r.x + dx, 0, W - r.w), clamp(r.y + dy, 0, H - r.h), r.w, r.h);
+    } else if (handle === 'new') {
+      const x1 = clamp(Math.min(startX, p.x), 0, W);
+      const y1 = clamp(Math.min(startY, p.y), 0, H);
+      const x2 = clamp(Math.max(startX, p.x), 0, W);
+      const y2 = clamp(Math.max(startY, p.y), 0, H);
+      setCropRect(x1, y1, x2 - x1, y2 - y1);
+    } else {
+      let left = r.x, top = r.y, right = r.x + r.w, bottom = r.y + r.h;
+      if (handle.includes('w')) left = clamp(left + dx, 0, right - CROP_MIN);
+      if (handle.includes('e')) right = clamp(right + dx, left + CROP_MIN, W);
+      if (handle.includes('n')) top = clamp(top + dy, 0, bottom - CROP_MIN);
+      if (handle.includes('s')) bottom = clamp(bottom + dy, top + CROP_MIN, H);
+      setCropRect(left, top, right - left, bottom - top);
+    }
+  });
+
+  const endDrag = () => { cropDrag = null; };
+  overlay.addEventListener('pointerup', endDrag);
+  overlay.addEventListener('pointercancel', endDrag);
+
+  updateCropUI();
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function pointerToFrame(e) {
+  const rect = $('framePreviewImg').getBoundingClientRect();
+  return {
+    x: Math.round((e.clientX - rect.left) * state.frameSize.w / rect.width),
+    y: Math.round((e.clientY - rect.top) * state.frameSize.h / rect.height),
+  };
+}
+
+function setCropRect(x, y, w, h) {
+  if (!state.frameSize) return;
+  const { w: W, h: H } = state.frameSize;
+  x = clamp(Math.round(x), 0, W - 1);
+  y = clamp(Math.round(y), 0, H - 1);
+  w = clamp(Math.round(w), 1, W - x);
+  h = clamp(Math.round(h), 1, H - y);
+  Object.assign(state.crop, { x, y, w, h });
+  updateCropUI();
+}
+
+function isCropFull() {
+  const { x, y, w, h } = state.crop;
+  return !state.frameSize || (x === 0 && y === 0 && w === state.frameSize.w && h === state.frameSize.h);
+}
+
+function getCropOption() {
+  if (!state.crop.enabled || isCropFull()) return null;
+  const { x, y, w, h } = state.crop;
+  return { x, y, width: w, height: h };
+}
+
+function resetCropState() {
+  state.frameSize = null;
+  state.crop = { enabled: false, x: 0, y: 0, w: 0, h: 0 };
+  $('cropEnabled').checked = false;
+  updateCropUI();
+}
+
+function updateCropUI() {
+  const { enabled, x, y, w, h } = state.crop;
+  const hasFrame = !!state.frameSize;
+
+  for (const [id, v] of [['cropX', x], ['cropY', y], ['cropW', w], ['cropH', h]]) {
+    $(id).disabled = !enabled || !hasFrame;
+    if (hasFrame) $(id).value = String(v);
+  }
+  if (hasFrame) {
+    $('cropX').max = String(state.frameSize.w - 1);
+    $('cropY').max = String(state.frameSize.h - 1);
+    $('cropW').max = String(state.frameSize.w);
+    $('cropH').max = String(state.frameSize.h);
+  }
+  $('btnCropReset').disabled = !enabled || isCropFull();
+  $('cropOverlay').classList.toggle('hidden', !enabled || !hasFrame);
+
+  if (!hasFrame) $('cropInfo').textContent = '';
+  else if (enabled && !isCropFull()) $('cropInfo').textContent = `${state.frameSize.w}×${state.frameSize.h} → ${w}×${h}`;
+  else $('cropInfo').textContent = `${state.frameSize.w}×${state.frameSize.h}`;
+
+  layoutCropOverlay();
+}
+
+function layoutCropOverlay() {
+  const img = $('framePreviewImg');
+  if (!state.frameSize || !img.naturalWidth) return;
+  const container = $('framePreview').getBoundingClientRect();
+  const r = img.getBoundingClientRect();
+  const overlay = $('cropOverlay');
+  overlay.style.left = `${r.left - container.left - $('framePreview').clientLeft}px`;
+  overlay.style.top = `${r.top - container.top - $('framePreview').clientTop}px`;
+  overlay.style.width = `${r.width}px`;
+  overlay.style.height = `${r.height}px`;
+
+  const sx = r.width / state.frameSize.w;
+  const sy = r.height / state.frameSize.h;
+  const { x, y, w, h } = state.crop;
+  for (const el of [$('cropBox'), $('cropHole')]) {
+    el.style.left = `${x * sx}px`;
+    el.style.top = `${y * sy}px`;
+    el.style.width = `${w * sx}px`;
+    el.style.height = `${h * sy}px`;
+  }
+}
+
+// Scans several frames spread across the clip and keeps the thinnest bar on each
+// side, so a single dark scene doesn't eat into the picture.
+async function autoDetectBlackBars() {
+  if (state.framePaths.length === 0) return;
+  const btn = $('btnCropAuto');
+  btn.disabled = true;
+  btn.textContent = 'Detecting...';
+
+  try {
+    const samples = Math.min(8, state.framePaths.length);
+    const indices = [...new Set(Array.from({ length: samples }, (_, i) =>
+      Math.floor((i + 0.5) * state.framePaths.length / samples)))];
+
+    let result = null;
+    for (const idx of indices) {
+      const dataUrl = await invoke('read_frame_base64', { path: state.framePaths[idx] });
+      const bars = detectBars(await loadImage(dataUrl));
+      if (!bars) continue; // frame is entirely dark
+      result = result
+        ? { top: Math.min(result.top, bars.top), bottom: Math.min(result.bottom, bars.bottom),
+            left: Math.min(result.left, bars.left), right: Math.min(result.right, bars.right),
+            w: bars.w, h: bars.h }
+        : bars;
+    }
+
+    if (!result) {
+      $('cropInfo').textContent = 'No black bars found';
+      return;
+    }
+
+    if (!state.frameSize) state.frameSize = { w: result.w, h: result.h };
+    state.crop.enabled = true;
+    $('cropEnabled').checked = true;
+    setCropRect(result.left, result.top,
+      result.w - result.left - result.right, result.h - result.top - result.bottom);
+    if (isCropFull()) $('cropInfo').textContent = 'No black bars found';
+  } catch (err) {
+    console.error('[crop] auto-detect failed:', err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Auto-detect black bars';
+  }
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function detectBars(img) {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, w, h).data;
+
+  // A line counts as "bar" if fewer than 2% of its pixels are brighter than the threshold
+  const LUMA = 40;
+  const isBright = (i) => (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) > LUMA;
+  const rowDark = (y) => {
+    let n = 0;
+    for (let x = 0; x < w; x++) if (isBright((y * w + x) * 4)) n++;
+    return n < w * 0.02;
+  };
+  const colDark = (x) => {
+    let n = 0;
+    for (let y = 0; y < h; y++) if (isBright((y * w + x) * 4)) n++;
+    return n < h * 0.02;
+  };
+
+  let top = 0;
+  while (top < h && rowDark(top)) top++;
+  if (top === h) return null;
+  let bottom = 0;
+  while (bottom < h - top && rowDark(h - 1 - bottom)) bottom++;
+  let left = 0;
+  while (left < w && colDark(left)) left++;
+  let right = 0;
+  while (right < w - left && colDark(w - 1 - right)) right++;
+
+  return { top, bottom, left, right, w, h };
 }
 
 // --- Drag & Drop ---

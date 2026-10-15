@@ -21,6 +21,7 @@ No installer required. Windows 10+ (WebView2 is preinstalled).
 - Set output resolution and frame rate
 - Frame editor with preview, select/deselect, remove
 - Multi-select: Ctrl+Click toggle, Shift+Click range
+- Crop: drag a crop frame over the preview or type X/Y/W/H; one click auto-detects black bars
 - GIF quality: low / medium / high (per-frame color palette)
 - Fast mode: global palette for smaller file size and faster encoding
 
