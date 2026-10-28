@@ -51,6 +51,7 @@ async function init() {
 }
 
 function goToStep(step) {
+  stopPlayback();
   state.currentStep = step;
   document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
   $(step === 1 ? 'step1' : 'step2').classList.add('active');
@@ -164,6 +165,7 @@ async function extractFrames() {
       options: { input_path: state.videoPath, start_time: startTime, end_time: endTime, fps, width, height }
     });
 
+    frameCache.clear();
     state.framePaths = frames;
     state.selectedFrames.clear();
     resetCropState();
@@ -192,6 +194,7 @@ function setupStep2() {
   $('btnRemoveSelected').addEventListener('click', removeSelectedFrames);
   $('btnBackToStep1').addEventListener('click', () => { goToStep(1); resetStep1UI(); });
   $('btnMakeGif').onclick = makeGif;
+  $('btnPlay').addEventListener('click', togglePlayback);
   $('btnNewConversion').addEventListener('click', resetApp);
   $('btnOpenGif').addEventListener('click', openGif);
 
@@ -205,6 +208,7 @@ function setupStep2() {
   frameSelector.addEventListener('mousedown', (e) => {
     const target = e.target;
     if (!target || target.tagName !== 'OPTION') return;
+    stopPlayback();
     const idx = parseInt(target.value);
     if (isNaN(idx)) return;
 
@@ -230,6 +234,7 @@ function setupStep2() {
   });
 
   frameSelector.addEventListener('keydown', (e) => {
+    stopPlayback();
     if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeSelectedFrames(); }
     if (e.key === ' ') { e.preventDefault(); const idx = frameSelector.selectedIndex; if (idx >= 0) { toggleFrameSelection(idx); lastClickedIndex = idx; } }
   });
@@ -250,15 +255,69 @@ function loadFrameList() {
   updateRemoveButton();
 }
 
-async function showFramePreview(index) {
-  if (index >= 0 && index < state.framePaths.length) {
-    try {
-      const dataUrl = await invoke('read_frame_base64', { path: state.framePaths[index] });
-      $('framePreviewImg').src = dataUrl;
-    } catch (err) {
-      console.error('[preview] failed to load frame:', err);
-    }
+// Frame data URLs by path, so playback does not re-read files every loop
+const frameCache = new Map();
+let previewToken = 0;
+
+async function loadFrame(path) {
+  let url = frameCache.get(path);
+  if (!url) {
+    url = await invoke('read_frame_base64', { path });
+    frameCache.set(path, url);
   }
+  return url;
+}
+
+async function showFramePreview(index) {
+  if (index < 0 || index >= state.framePaths.length) return;
+  const token = ++previewToken;
+  try {
+    const dataUrl = await loadFrame(state.framePaths[index]);
+    // A newer request may have finished first; don't overwrite it
+    if (token === previewToken) $('framePreviewImg').src = dataUrl;
+  } catch (err) {
+    console.error('[preview] failed to load frame:', err);
+  }
+}
+
+// --- Playback ---
+
+let playTimer = null;
+
+function getGifFps() {
+  return parseInt($('gifPlayspeed').value === 'source' ? $('fpsSelect').value : $('gifFpsCustom').value);
+}
+
+function togglePlayback() {
+  if (playTimer !== null) stopPlayback();
+  else startPlayback();
+}
+
+function startPlayback() {
+  if (state.framePaths.length < 2) return;
+  const selector = $('frameSelector');
+  let idx = selector.selectedIndex;
+  // Start from the beginning if we are on the last frame
+  if (idx < 0 || idx >= state.framePaths.length - 1) idx = -1;
+  $('btnPlay').innerHTML = '&#10074;&#10074; Pause';
+
+  const tick = async () => {
+    const started = performance.now();
+    idx = (idx + 1) % state.framePaths.length;
+    selector.selectedIndex = idx;
+    await showFramePreview(idx);
+    if (playTimer === null) return;
+    const interval = 1000 / (getGifFps() || 10);
+    playTimer = setTimeout(tick, Math.max(0, interval - (performance.now() - started)));
+  };
+  playTimer = setTimeout(tick, 0);
+}
+
+function stopPlayback() {
+  if (playTimer === null) return;
+  clearTimeout(playTimer);
+  playTimer = null;
+  $('btnPlay').innerHTML = '&#9654; Play';
 }
 
 function toggleFrameSelection(index) {
@@ -323,12 +382,8 @@ async function makeGif() {
   });
   if (!outputPath) return;
 
-  let fps;
-  if ($('gifPlayspeed').value === 'source') {
-    fps = parseInt($('fpsSelect').value);
-  } else {
-    fps = parseInt($('gifFpsCustom').value);
-  }
+  stopPlayback();
+  const fps = getGifFps();
   const quality = $('gifQuality').value;
   const looping = true;
   const fastMode = $('gifFastMode').checked;

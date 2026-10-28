@@ -620,6 +620,11 @@ body {
   cursor: pointer;
 }
 
+.crop-bar__play {
+  min-width: 72px;
+  margin-right: 6px;
+}
+
 .crop-field {
   display: flex;
   align-items: center;
